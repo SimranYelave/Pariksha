@@ -3,38 +3,14 @@ import '../models/category.dart';
 import '../widgets/category_card.dart';
 import '../screens/category_detail_screen.dart';
 import '../screens/history_screen.dart';
+import '../services/category_service.dart';
+import 'login_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final String username;
+  final CategoryService categoryService = CategoryService();
 
   HomeScreen({required this.username});
-
-  final List<Category> categories = [
-    Category(
-      id: 'web-dev',
-      title: 'Web Development',
-      description: 'Tests covering various web development topics and technologies',
-      testsAvailable: true,
-    ),
-    Category(
-      id: 'prog-langs',
-      title: 'Programming Languages',
-      description: 'Tests covering various programming languages and paradigms',
-      testsAvailable: true,
-    ),
-    Category(
-      id: 'cs-fundamentals',
-      title: 'CS Fundamentals',
-      description: 'Tests covering fundamental computer science concepts',
-      testsAvailable: true,
-    ),
-    Category(
-      id: 'aptitude',
-      title: 'Aptitude',
-      description: 'Tests covering various aptitude and reasoning skills',
-      testsAvailable: true,
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +21,7 @@ class HomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Header
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -57,9 +34,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                       Text(
                         'Challenge your knowledge!',
-                        style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                          fontSize: 18,
-                        ),
+                        style: Theme.of(context).textTheme.displayMedium?.copyWith(fontSize: 18),
                       ),
                     ],
                   ),
@@ -67,21 +42,26 @@ class HomeScreen extends StatelessWidget {
                     children: [
                       IconButton(
                         icon: Icon(Icons.nightlight_round, color: Colors.white),
-                        onPressed: () {
-                          // Toggle dark/light mode
-                        },
+                        onPressed: () {},
                       ),
                       IconButton(
                         icon: Icon(Icons.logout, color: Colors.white),
                         onPressed: () {
-                          Navigator.of(context).pop();
+                          // Navigate to login page
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (context) => LoginScreen()), // Replace with your login page
+                          );
                         },
                       ),
                     ],
                   ),
                 ],
               ),
+
               SizedBox(height: 20),
+
+              // Welcome message
               Text(
                 'Welcome, $username',
                 style: TextStyle(
@@ -90,20 +70,22 @@ class HomeScreen extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+
               SizedBox(height: 10),
               Text(
                 'Select a category to start a quiz or review your previous attempts.',
-                style: Theme.of(context).textTheme.	bodyLarge,
+                style: Theme.of(context).textTheme.bodyLarge,
               ),
+
               SizedBox(height: 20),
+
+              // Buttons
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () {},
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepPurple,
-                      ),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
                       child: Text('Categories'),
                     ),
                   ),
@@ -116,35 +98,49 @@ class HomeScreen extends StatelessWidget {
                           MaterialPageRoute(builder: (context) => HistoryScreen()),
                         );
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey[800],
-                      ),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[800]),
                       child: Text('History'),
                     ),
                   ),
                 ],
               ),
+
               SizedBox(height: 20),
+
+              // Fetch and show categories
               Expanded(
-                child: ListView.builder(
-                  itemCount: categories.length,
-                  itemBuilder: (context, index) {
-                    return CategoryCard(
-                      category: categories[index],
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => CategoryDetailScreen(
-                              category: categories[index],
-                            ),
-                          ),
+                child: FutureBuilder<List<Category>>(
+                  future: categoryService.fetchCategories(), // API call here
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(child: CircularProgressIndicator());
+                    } else if (snapshot.hasError) {
+                      return Center(child: Text('Error: ${snapshot.error}'));
+                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Center(child: Text('No categories found'));
+                    }
+
+                    final categories = snapshot.data!;
+                    return ListView.builder(
+                      itemCount: categories.length,
+                      itemBuilder: (context, index) {
+                        return CategoryCard(
+                          category: categories[index],
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => CategoryDetailScreen(category: categories[index]),
+                              ),
+                            );
+                          },
                         );
                       },
                     );
                   },
                 ),
               ),
+
               SizedBox(height: 10),
               Center(
                 child: Text(

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../models/quiz.dart';
 import '../models/question.dart';
 import '../screens/results_screen.dart';
-
+import 'dart:math';
 class QuizScreen extends StatefulWidget {
   final Quiz quiz;
 
@@ -14,7 +16,7 @@ class QuizScreen extends StatefulWidget {
 }
 
 class _QuizScreenState extends State<QuizScreen> {
-  late List<Question> questions;
+  late List<Question> questions = [];
   int currentQuestionIndex = 0;
   Map<int, String?> userAnswers = {};
   late Timer _timer;
@@ -46,109 +48,55 @@ class _QuizScreenState extends State<QuizScreen> {
     });
   }
 
-  void _loadQuestions() {
-    // In a real app, you would load questions from API or database
-    // For demo purposes, hardcoding some sample questions for HTML Basics
-    if (widget.quiz.id == 'html-basics') {
-      questions = [
-        Question(
-          id: 'q1',
-          text: 'What does HTML stand for?',
-          options: [
-            'Hyper Text Markup Language',
-            'Hyper Transfer Markup Language',
-            'High Text Machine Language',
-            'Hyperlink Text Management Language',
-          ],
-          correctAnswer: 'Hyper Text Markup Language',
-        ),
-        Question(
-          id: 'q2',
-          text: 'Which tag is used to create a hyperlink in HTML?',
-          options: ['<a>', '<h>', '<p>', '<link>'],
-          correctAnswer: '<a>',
-        ),
-        // Add more questions here
-        Question(
-          id: 'q3',
-          text: 'Which HTML element is used to define the document title?',
-          options: ['<head>', '<title>', '<header>', '<meta>'],
-          correctAnswer: '<title>',
-        ),
-        Question(
-          id: 'q4',
-          text: 'What is the correct HTML for creating a checkbox?',
-          options: [
-            '<input type="checkbox">',
-            '<check>',
-            '<checkbox>',
-            '<input type="check">'
-          ],
-          correctAnswer: '<input type="checkbox">',
-        ),
-        Question(
-          id: 'q5',
-          text: 'Which HTML attribute specifies an alternate text for an image?',
-          options: ['alt', 'title', 'src', 'desc'],
-          correctAnswer: 'alt',
-        ),
-        Question(
-          id: 'q6',
-          text: 'What is the correct HTML for making a dropdown list?',
-          options: [
-            '<select>',
-            '<input type="dropdown">',
-            '<list>',
-            '<dropdown>'
-          ],
-          correctAnswer: '<select>',
-        ),
-        Question(
-          id: 'q7',
-          text: 'Which HTML element defines the largest heading?',
-          options: ['<h1>', '<h6>', '<heading>', '<head>'],
-          correctAnswer: '<h1>',
-        ),
-        Question(
-          id: 'q8',
-          text: 'What is the correct HTML for inserting an image?',
-          options: [
-            '<img src="image.jpg" alt="MyImage">',
-            '<image src="image.jpg" alt="MyImage">',
-            '<img href="image.jpg" alt="MyImage">',
-            '<picture src="image.jpg" alt="MyImage">'
-          ],
-          correctAnswer: '<img src="image.jpg" alt="MyImage">',
-        ),
-        Question(
-          id: 'q9',
-          text: 'Which character is used to indicate an end tag?',
-          options: ['/', '!', '*', '^'],
-          correctAnswer: '/',
-        ),
-        Question(
-          id: 'q10',
-          text: 'Which HTML element is used to define an unordered list?',
-          options: ['<ul>', '<ol>', '<li>', '<list>'],
-          correctAnswer: '<ul>',
-        ),
-      ];
-    } else {
-      // Default placeholder questions for other quizzes
-      questions = List.generate(
-        10,
-        (index) => Question(
-          id: 'q${index + 1}',
-          text: 'Sample question ${index + 1} for ${widget.quiz.title}',
-          options: [
-            'Option A',
-            'Option B',
-            'Option C',
-            'Option D',
-          ],
-          correctAnswer: 'Option A',
-        ),
+  Future<void> _loadQuestions() async {
+    try {
+      
+      final response = await http.get(
+        Uri.parse('https://madpwa-backend.onrender.com/api/tests/${widget.quiz.id}/questions'),
       );
+
+      if (response.statusCode == 200) {
+        final jsonBody = json.decode(response.body);
+       
+
+        List<dynamic> questionList = [];
+
+        // Directly access 'questions' from the response body
+        if (jsonBody.containsKey('questions') && jsonBody['questions'] is List) {
+          questionList = jsonBody['questions'];
+        }
+
+        setState(() {
+          questions = questionList
+              .map<Question>((json) => Question.fromJson(json))
+              .toList();
+
+          if (questions.isEmpty) {
+            questions = [
+              Question(
+                id: '1',
+                text: 'Sample question - API data could not be loaded',
+                options: ['Option A', 'Option B', 'Option C', 'Option D'],
+                correctAnswer: 'Option A',
+              ),
+            ];
+          }
+        });
+      } else {
+        throw Exception('Failed to load questions: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading questions: $e');
+      setState(() {
+        questions = [
+          Question(
+            id: '0',
+            text: 'Could not load questions. Please check your internet connection.',
+            options: ['Retry', 'Go back', 'Contact support'],
+            correctAnswer: 'Retry',
+          ),
+        ];
+      });
     }
   }
 
@@ -158,37 +106,98 @@ class _QuizScreenState extends State<QuizScreen> {
     return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
-  void _submitQuiz() {
-    _timer.cancel();
-    
-    // Calculate score
-    int score = 0;
-    userAnswers.forEach((questionIndex, answer) {
-      if (answer == questions[questionIndex].correctAnswer) {
-        score++;
-      }
-    });
-    
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ResultsScreen(
-          quiz: widget.quiz,
-          score: score,
-          questions: questions,
-          userAnswers: userAnswers,
-        ),
-      ),
-    );
+void _submitQuiz() async {
+  _timer.cancel();
+
+  int totalQuestions = questions.length;
+  int score = 0;
+  int timeTaken = widget.quiz.durationMinutes * 60 - _timeLeft;
+
+  // Generate a MongoDB-like ObjectId for the submission
+  String generateObjectId() {
+    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toRadixString(16).padLeft(8, '0');
+    final machineId = (Random().nextInt(16777216)).toRadixString(16).padLeft(6, '0');
+    final processId = (Random().nextInt(65536)).toRadixString(16).padLeft(4, '0');
+    final counter = (Random().nextInt(16777216)).toRadixString(16).padLeft(6, '0');
+    return timestamp + machineId + processId + counter;
   }
 
+  List<Map<String, dynamic>> answerList = [];
+
+  userAnswers.forEach((index, selectedText) {
+    if (index < questions.length && selectedText != null) {
+      final question = questions[index];
+      int selectedOption = question.options.indexOf(selectedText);
+      bool isCorrect = selectedText == question.correctAnswer;
+      
+      if (isCorrect) score++;
+      
+      answerList.add({
+        '_id': generateObjectId(), // Add ID to each answer
+        'questionId': question.id,
+        'selectedOption': selectedOption,
+        'isCorrect': isCorrect,
+      });
+    }
+  });
+
+  bool passed = score >= (0.4 * totalQuestions);
+
+  final submissionData = {
+    '_id': generateObjectId(), // Add ID to the overall submission
+    'user': '67c5d5ddc62a4410f7017b43', // Use the correct user ID from your example
+    'testId': widget.quiz.id,
+    'score': score,
+    'passed': passed,
+    'timeTaken': timeTaken,
+    'answers': answerList,
+    'completedAt': DateTime.now().toIso8601String(),
+  };
+
+  try {
+    // Log the submission data for debugging
+    print("Submitting data: ${json.encode(submissionData)}");
+    
+    final response = await http.post(
+      Uri.parse('https://madpwa-backend.onrender.com/api/tests/${widget.quiz.id}/submit'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(submissionData),
+    );
+
+    if (response.statusCode == 200) {
+      print("Quiz submitted successfully.");
+    } else {
+      print("Failed to submit quiz: ${response.statusCode}");
+      print("Response body: ${response.body}");
+    }
+  } catch (e) {
+    print("Error submitting quiz: $e");
+  }
+
+  // Navigate to Results Screen
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (context) => ResultsScreen(
+        quiz: widget.quiz,
+        score: score,
+        questions: questions,
+        userAnswers: userAnswers,
+      ),
+    ),
+  );
+}
   @override
   Widget build(BuildContext context) {
+    if (questions.isEmpty) {
+      return Center(child: CircularProgressIndicator());
+    }
+
     Question currentQuestion = questions[currentQuestionIndex];
-    
+
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(  // Added SingleChildScrollView here
+        child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -206,14 +215,16 @@ class _QuizScreenState extends State<QuizScreen> {
                       ),
                     ),
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: Colors.grey[900],
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.timer, color: Colors.deepPurple, size: 18),
+                          Icon(Icons.timer,
+                              color: Colors.deepPurple, size: 18),
                           SizedBox(width: 5),
                           Text(
                             _formatTime(_timeLeft),
@@ -236,7 +247,8 @@ class _QuizScreenState extends State<QuizScreen> {
                 LinearProgressIndicator(
                   value: (currentQuestionIndex + 1) / questions.length,
                   backgroundColor: Colors.grey[800],
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.deepPurple),
+                  valueColor:
+                      AlwaysStoppedAnimation<Color>(Colors.deepPurple),
                 ),
                 SizedBox(height: 30),
                 Container(
@@ -258,7 +270,8 @@ class _QuizScreenState extends State<QuizScreen> {
                       ),
                       SizedBox(height: 20),
                       ...currentQuestion.options.map((option) {
-                        bool isSelected = userAnswers[currentQuestionIndex] == option;
+                        bool isSelected =
+                            userAnswers[currentQuestionIndex] == option;
                         return GestureDetector(
                           onTap: () {
                             setState(() {
@@ -267,11 +280,16 @@ class _QuizScreenState extends State<QuizScreen> {
                           },
                           child: Container(
                             margin: EdgeInsets.only(bottom: 12),
-                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
                             decoration: BoxDecoration(
-                              color: isSelected ? Colors.deepPurple.withOpacity(0.2) : Colors.black,
+                              color: isSelected
+                                  ? Colors.deepPurple.withOpacity(0.2)
+                                  : Colors.black,
                               border: Border.all(
-                                color: isSelected ? Colors.deepPurple : Colors.grey[800]!,
+                                color: isSelected
+                                    ? Colors.deepPurple
+                                    : Colors.grey[800]!,
                                 width: 1,
                               ),
                               borderRadius: BorderRadius.circular(8),
@@ -284,10 +302,14 @@ class _QuizScreenState extends State<QuizScreen> {
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: isSelected ? Colors.deepPurple : Colors.grey[600]!,
+                                      color: isSelected
+                                          ? Colors.deepPurple
+                                          : Colors.grey[600]!,
                                       width: 2,
                                     ),
-                                    color: isSelected ? Colors.deepPurple : Colors.transparent,
+                                    color: isSelected
+                                        ? Colors.deepPurple
+                                        : Colors.transparent,
                                   ),
                                   child: isSelected
                                       ? Icon(
@@ -314,7 +336,7 @@ class _QuizScreenState extends State<QuizScreen> {
                     ],
                   ),
                 ),
-                SizedBox(height: 30),  // Changed from Spacer() to SizedBox for fixed spacing
+                SizedBox(height: 30),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -328,12 +350,16 @@ class _QuizScreenState extends State<QuizScreen> {
                           : null,
                       icon: Icon(
                         Icons.arrow_back,
-                        color: currentQuestionIndex > 0 ? Colors.grey : Colors.grey[700],
+                        color: currentQuestionIndex > 0
+                            ? Colors.grey
+                            : Colors.grey[700],
                       ),
                       label: Text(
                         'Previous',
                         style: TextStyle(
-                          color: currentQuestionIndex > 0 ? Colors.grey : Colors.grey[700],
+                          color: currentQuestionIndex > 0
+                              ? Colors.grey
+                              : Colors.grey[700],
                         ),
                       ),
                     ),
@@ -348,7 +374,8 @@ class _QuizScreenState extends State<QuizScreen> {
                               'Next',
                               style: TextStyle(color: Colors.deepPurple),
                             ),
-                            label: Icon(Icons.arrow_forward, color: Colors.deepPurple),
+                            label:
+                                Icon(Icons.arrow_forward, color: Colors.deepPurple),
                           )
                         : TextButton(
                             onPressed: () {
@@ -423,7 +450,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   itemBuilder: (context, index) {
                     bool isAnswered = userAnswers.containsKey(index);
                     bool isCurrent = index == currentQuestionIndex;
-                    
+
                     return GestureDetector(
                       onTap: () {
                         setState(() {
@@ -443,7 +470,8 @@ class _QuizScreenState extends State<QuizScreen> {
                           child: Text(
                             '${index + 1}',
                             style: TextStyle(
-                              color: isCurrent || isAnswered ? Colors.white : Colors.grey,
+                              color:
+                                  isCurrent || isAnswered ? Colors.white : Colors.grey,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -452,7 +480,7 @@ class _QuizScreenState extends State<QuizScreen> {
                     );
                   },
                 ),
-                SizedBox(height: 20),  // Added extra padding at the bottom
+                SizedBox(height: 20),
               ],
             ),
           ),

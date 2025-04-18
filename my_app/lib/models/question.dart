@@ -1,3 +1,5 @@
+// models/question.dart
+
 class Question {
   final String id;
   final String text;
@@ -10,4 +12,14 @@ class Question {
     required this.options,
     required this.correctAnswer,
   });
+
+  factory Question.fromJson(Map<String, dynamic> json) {
+  return Question(
+    id: json['_id'] ?? '',
+    text: json['text'] ?? '',
+    options: (json['options'] as List?)?.map((e) => e.toString()).toList() ?? [],
+    correctAnswer: json['correctAnswer'] ?? '',
+  );
+}
+
 }

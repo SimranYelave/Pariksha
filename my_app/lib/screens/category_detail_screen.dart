@@ -1,55 +1,28 @@
 import 'package:flutter/material.dart';
 import '../models/category.dart';
 import '../models/quiz.dart';
+import '../services/quiz_service.dart';
+import '../services/test_service.dart';
 import '../screens/quiz_instructions_screen.dart';
 
-class CategoryDetailScreen extends StatelessWidget {
+class CategoryDetailScreen extends StatefulWidget {
   final Category category;
 
   CategoryDetailScreen({required this.category});
 
-  final List<Quiz> webDevQuizzes = [
-    Quiz(
-      id: 'html-basics',
-      title: 'HTML Basics',
-      description: 'Test your knowledge of HTML fundamentals',
-      questionCount: 10,
-      passingMarks: 6,
-      durationMinutes: 5,
-    ),
-    Quiz(
-      id: 'css-fundamentals',
-      title: 'CSS Fundamentals',
-      description: 'Test your knowledge of CSS styling concepts',
-      questionCount: 10,
-      passingMarks: 6,
-      durationMinutes: 5,
-    ),
-    Quiz(
-      id: 'js-basics',
-      title: 'JavaScript Basics',
-      description: 'Test your knowledge of JavaScript programming',
-      questionCount: 10,
-      passingMarks: 6,
-      durationMinutes: 5,
-    ),
-    Quiz(
-      id: 'react-fundamentals',
-      title: 'React Fundamentals',
-      description: 'Test your knowledge of React.js framework',
-      questionCount: 10,
-      passingMarks: 6,
-      durationMinutes: 5,
-    ),
-    Quiz(
-      id: 'node-express',
-      title: 'Node.js and Express',
-      description: 'Test your knowledge of Node.js and Express framework',
-      questionCount: 10,
-      passingMarks: 6,
-      durationMinutes: 5,
-    ),
-  ];
+  @override
+  State<CategoryDetailScreen> createState() => _CategoryDetailScreenState();
+}
+
+class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
+  final QuizService quizService = QuizService();
+  late Future<List<Quiz>> quizzesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    quizzesFuture = quizService.fetchTestsByCategory(widget.category.id);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,11 +33,8 @@ class CategoryDetailScreen extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          category.title,
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+          widget.category.title,
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.black,
         elevation: 0,
@@ -74,16 +44,29 @@ class CategoryDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              category.description,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
+            Text(widget.category.description, style: Theme.of(context).textTheme.bodyLarge),
             SizedBox(height: 20),
             Expanded(
-              child: ListView.builder(
-                itemCount: webDevQuizzes.length,
-                itemBuilder: (context, index) {
-                  return _buildQuizCard(context, webDevQuizzes[index]);
+              child: FutureBuilder<List<Quiz>>(
+                future: quizzesFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(child: CircularProgressIndicator());
+                  } else if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    return Center(child: Text('No quizzes found'));
+                  }
+
+                  final quizzes = snapshot.data!;
+                  for (var quiz in quizzes) {
+                    print("Quiz Loaded: ${quiz.id} - ${quiz.title}");
+                  }
+
+                  return ListView.builder(
+                    itemCount: quizzes.length,
+                    itemBuilder: (context, index) => _buildQuizCard(context, quizzes[index]),
+                  );
                 },
               ),
             ),
@@ -95,13 +78,20 @@ class CategoryDetailScreen extends StatelessWidget {
 
   Widget _buildQuizCard(BuildContext context, Quiz quiz) {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => QuizInstructionsScreen(quiz: quiz),
-          ),
-        );
+      onTap: () async {
+        try {
+          final fetchedQuiz = await TestService().fetchTestById(quiz.id);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => QuizInstructionsScreen(testId: quiz.id),
+            ),
+          );
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to load test: $e')),
+          );
+        }
       },
       child: Container(
         margin: EdgeInsets.only(bottom: 16),
@@ -118,33 +108,24 @@ class CategoryDetailScreen extends StatelessWidget {
                 Container(
                   height: 10,
                   width: 10,
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurple,
-                    shape: BoxShape.circle,
-                  ),
+                  decoration: BoxDecoration(color: Colors.deepPurple, shape: BoxShape.circle),
                 ),
                 SizedBox(width: 10),
                 Text(
                   quiz.title,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             SizedBox(height: 10),
-            Text(
-              quiz.description,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            Text(quiz.description, style: Theme.of(context).textTheme.bodyMedium),
             SizedBox(height: 15),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildInfoBox(context, Icons.description, '${quiz.questionCount} Questions'),
-                _buildInfoBox(context, Icons.military_tech, '${quiz.passingMarks}/${quiz.questionCount} to Pass'),
+                _buildInfoBox(context, Icons.military_tech,
+                    '${quiz.passingMarks}/${quiz.questionCount} to Pass'),
                 _buildInfoBox(context, Icons.timer, '${quiz.durationMinutes} Minutes'),
               ],
             ),
@@ -157,21 +138,12 @@ class CategoryDetailScreen extends StatelessWidget {
   Widget _buildInfoBox(BuildContext context, IconData icon, String text) {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(8)),
       child: Column(
         children: [
           Icon(icon, color: Colors.deepPurple, size: 20),
           SizedBox(height: 5),
-          Text(
-            text,
-            style: TextStyle(
-              color: Colors.grey[400],
-              fontSize: 12,
-            ),
-          ),
+          Text(text, style: TextStyle(color: Colors.grey[400], fontSize: 12)),
         ],
       ),
     );
